@@ -20,38 +20,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# In-memory session store
 sessions: Dict[str, PaperReviewEnv] = {}
 
-
 class ResetRequest(BaseModel):
-    session_id: str
-    difficulty: Literal["easy", "medium", "hard"] = "easy"
-
+    session_id: Optional[str] = "default"
+    difficulty: Optional[Literal["easy", "medium", "hard"]] = "easy"
 
 class StepRequest(BaseModel):
-    session_id: str
-    decision: Literal["accept", "reject", "revise"]
+    session_id: Optional[str] = "default"
+    decision: Literal["accept", "reject", "revise"] = "reject"
     identified_flaws: list[str] = []
-    justification: str
+    justification: str = ""
     confidence: float = 0.5
     requested_changes: Optional[list[str]] = None
-
-
-class ResetResponse(BaseModel):
-    session_id: str
-    observation: Dict[str, Any]
-    observation_space: Dict[str, Any]
-    action_space: Dict[str, Any]
-
-
-class StepResponse(BaseModel):
-    session_id: str
-    observation: Dict[str, Any]
-    reward: Dict[str, Any]
-    done: bool
-    info: Dict[str, Any]
-
 
 @app.get("/")
 def root():
@@ -63,30 +44,31 @@ def root():
         "endpoints": ["/reset", "/step", "/ground_truth", "/health"],
     }
 
-
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
-
-@app.post("/reset", response_model=ResetResponse)
-def reset(request: ResetRequest):
+@app.post("/reset")
+def reset(request: Optional[ResetRequest] = None):
+    if request is None:
+        request = ResetRequest()
     env = PaperReviewEnv(difficulty=request.difficulty)
     obs = env.reset()
     sessions[request.session_id] = env
-    return ResetResponse(
-        session_id=request.session_id,
-        observation=obs.model_dump(),
-        observation_space=env.observation_space,
-        action_space=env.action_space,
-    )
+    return {
+        "session_id": request.session_id,
+        "observation": obs.model_dump(),
+        "observation_space": env.observation_space,
+        "action_space": env.action_space,
+    }
 
-
-@app.post("/step", response_model=StepResponse)
+@app.post("/step")
 def step(request: StepRequest):
     env = sessions.get(request.session_id)
     if env is None:
-        raise HTTPException(status_code=404, detail="Session not found. Call /reset first.")
+        env = PaperReviewEnv(difficulty="easy")
+        env.reset()
+        sessions[request.session_id] = env
 
     action = Action(
         decision=request.decision,
@@ -101,14 +83,13 @@ def step(request: StepRequest):
     if done:
         sessions.pop(request.session_id, None)
 
-    return StepResponse(
-        session_id=request.session_id,
-        observation=obs.model_dump(),
-        reward=reward.model_dump(),
-        done=done,
-        info=info,
-    )
-
+    return {
+        "session_id": request.session_id,
+        "observation": obs.model_dump(),
+        "reward": reward.model_dump(),
+        "done": done,
+        "info": info,
+    }
 
 @app.get("/ground_truth/{session_id}")
 def ground_truth(session_id: str):
@@ -116,7 +97,6 @@ def ground_truth(session_id: str):
     if env is None:
         raise HTTPException(status_code=404, detail="Session not found.")
     return env.get_ground_truth()
-
 
 if __name__ == "__main__":
     uvicorn.run("server.app:app", host="0.0.0.0", port=7860, reload=False)
