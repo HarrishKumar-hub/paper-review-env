@@ -1,0 +1,71 @@
+name: paper-review-env
+version: "1.0.0"
+description: >
+  A reinforcement learning environment where an agent acts as a peer reviewer
+  for AI research papers. The agent reads paper sections (abstract, methodology,
+  results, claims), identifies planted flaws of varying subtlety, and makes
+  accept/reject/revise decisions. Rewards are fully deterministic based on
+  decision correctness, flaw detection rate, and justification quality.
+
+tasks:
+  - id: easy
+    description: Single paper with one or more obvious fatal flaws. Agent must identify and reject clearly broken submissions.
+    max_steps: 3
+    reward_range: [0.0, 1.1]
+
+  - id: medium
+    description: Borderline paper with hidden flaws AND genuine strengths. Agent must balance nuanced critique without dismissing solid work.
+    max_steps: 5
+    reward_range: [0.0, 1.1]
+
+  - id: hard
+    description: Adversarially written paper with planted red herrings, multi-turn information reveal, and compounding subtle errors. Agent is penalised for citing red herrings as decisive flaws.
+    max_steps: 5
+    reward_range: [0.0, 1.15]
+
+observation_space:
+  task_id: str
+  paper_id: str
+  title: str
+  abstract: str
+  methodology: str
+  results: str
+  claims: list[str]
+  step: int
+  max_steps: int
+  metadata: dict
+
+action_space:
+  decision: "accept | reject | revise"
+  identified_flaws: list[str]
+  justification: str
+  confidence: float  # [0.0, 1.0]
+  requested_changes: list[str] | null
+
+reward_components:
+  decision_score: "1.0 if correct decision, 0.0 otherwise (deterministic)"
+  flaw_detection_score: "fraction of planted flaws correctly identified (deterministic)"
+  justification_score: "length+specificity heuristic (deterministic)"
+  efficiency_bonus: "bonus for high-confidence correct decisions (deterministic)"
+  red_herring_penalty: "[hard only] penalty for citing red herrings as decisive flaws (deterministic)"
+
+grading:
+  type: deterministic
+  llm_in_graders: false
+
+endpoints:
+  reset: POST /reset
+  step: POST /step
+  ground_truth: GET /ground_truth/{session_id}
+  health: GET /health
+
+authors:
+  - name: "[YOUR NAME]"
+    email: "[YOUR EMAIL]"
+
+tags:
+  - nlp
+  - peer-review
+  - scientific-integrity
+  - multi-step
+  - deterministic-reward
